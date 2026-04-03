@@ -1,0 +1,12 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm init:*)",
+      "Bash(npm install:*)",
+      "Bash(timeout 5 node server.js)",
+      "Bash(timeout 5 PORT=3001 node server.js)",
+      "Bash(PORT=3001 timeout 5 node server.js)",
+      "Bash(git:*)"
+    ]
+  }
+}
