@@ -118,6 +118,11 @@
       font-size: 0.75rem; background: #2ecc71; color: #1a1a2e;
       padding: 2px 8px; border-radius: 6px; font-weight: 700;
     }
+    .player-list-item .offline-badge {
+      font-size: 0.75rem; background: #636e72; color: #fff;
+      padding: 2px 8px; border-radius: 6px; font-weight: 700;
+    }
+    .player-list-item.disconnected { opacity: 0.5; }
     .lobby-info { font-size: 0.9rem; color: #a89fd6; text-align: center; }
     .lobby-info strong { color: #ffd200; }
 
@@ -402,9 +407,12 @@
     function renderLobby(state) {
       const list = document.getElementById('player-list');
       list.innerHTML = state.players.map(p => `
-        <div class="player-list-item">
+        <div class="player-list-item${p.connected ? '' : ' disconnected'}">
           <span class="player-name">${escapeHtml(p.name)}${p.id === myId ? ' (you)' : ''}</span>
-          ${p.id === state.hostId ? '<span class="host-badge">HOST</span>' : ''}
+          <span>
+            ${p.id === state.hostId ? '<span class="host-badge">HOST</span> ' : ''}
+            ${!p.connected ? '<span class="offline-badge">OFFLINE</span>' : ''}
+          </span>
         </div>
       `).join('');
 
@@ -489,9 +497,9 @@
     function renderPhrasePlayerList(state) {
       const list = document.getElementById('phrase-player-list');
       list.innerHTML = state.players.map(p => `
-        <div class="player-list-item">
+        <div class="player-list-item${p.connected ? '' : ' disconnected'}">
           <span class="player-name">${escapeHtml(p.name)}${p.id === myId ? ' (you)' : ''}</span>
-          ${p.ready ? '<span class="ready-badge">READY</span>' : '<span style="color:#7a72a8;font-size:0.85rem;">typing...</span>'}
+          ${!p.connected ? '<span class="offline-badge">OFFLINE</span>' : p.ready ? '<span class="ready-badge">READY</span>' : '<span style="color:#7a72a8;font-size:0.85rem;">typing...</span>'}
         </div>
       `).join('');
     }

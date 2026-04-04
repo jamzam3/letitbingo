@@ -15,7 +15,20 @@ app.get('/', (req, res) => {
 });
 
 // ---- GAME STATE ----
+const ROOM_TTL = 12 * 60 * 60 * 1000; // 12 hours
 const rooms = new Map();
+
+// Clean up expired rooms every 10 minutes
+setInterval(() => {
+  const now = Date.now();
+  for (const [code, room] of rooms) {
+    if (now - room.createdAt > ROOM_TTL) {
+      rooms.delete(code);
+      io.to(code).emit('error-msg', 'This game session has expired.');
+      io.in(code).socketsLeave(code);
+    }
+  }
+}, 10 * 60 * 1000);
 
 function generateRoomCode() {
   const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
@@ -55,7 +68,8 @@ function getRoomState(room) {
       phrasesSubmitted: p.phrases.length,
       phrasesNeeded: 0,
       ready: p.ready,
-      won: p.won
+      won: p.won,
+      connected: p.connected
     }))
   };
 }
@@ -86,7 +100,8 @@ io.on('connection', (socket) => {
       phase: 'lobby', // lobby → phrases → game
       hostId: socket.id,
       players: [],
-      allPhrases: []
+      allPhrases: [],
+      createdAt: Date.now()
     };
 
     const player = {
@@ -97,7 +112,8 @@ io.on('connection', (socket) => {
       stamped: [],
       ready: false,
       won: false,
-      winLine: null
+      winLine: null,
+      connected: true
     };
 
     room.players.push(player);
@@ -116,8 +132,45 @@ io.on('connection', (socket) => {
       socket.emit('error-msg', 'Room not found.');
       return;
     }
+
+    // Check if this player is rejoining (same name, currently disconnected)
+    const existing = room.players.find(
+      p => p.name.toLowerCase() === playerName.toLowerCase() && !p.connected
+    );
+
+    if (existing) {
+      // Rejoin — restore their session
+      existing.id = socket.id;
+      existing.connected = true;
+      socket.join(code.toUpperCase());
+      currentRoom = room;
+      currentPlayer = existing;
+
+      const isHost = room.hostId === existing.id || room.hostId === socket.id;
+      if (room.hostId !== socket.id) {
+        // Update host if they were host before
+        const anyConnectedHost = room.players.find(p => p.id === room.hostId && p.connected);
+        if (!anyConnectedHost) room.hostId = socket.id;
+      }
+
+      socket.emit('room-joined', { code: code.toUpperCase(), playerId: socket.id, isHost: room.hostId === socket.id });
+
+      // If game is in progress, send them their card back
+      if (room.phase === 'game' && existing.card.length > 0) {
+        socket.emit('game-start', {
+          card: existing.card,
+          stamped: existing.stamped,
+          boardSize: room.boardSize
+        });
+      }
+
+      broadcastLobby(room);
+      return;
+    }
+
+    // New player joining
     if (room.phase !== 'lobby') {
-      socket.emit('error-msg', 'Game already in progress.');
+      socket.emit('error-msg', 'Game already in progress. If you were in this game, use the same name to rejoin.');
       return;
     }
     if (room.players.length >= 8) {
@@ -137,15 +190,16 @@ io.on('connection', (socket) => {
       stamped: [],
       ready: false,
       won: false,
-      winLine: null
+      winLine: null,
+      connected: true
     };
 
     room.players.push(player);
-    socket.join(code);
+    socket.join(code.toUpperCase());
     currentRoom = room;
     currentPlayer = player;
 
-    socket.emit('room-joined', { code, playerId: socket.id, isHost: false });
+    socket.emit('room-joined', { code: code.toUpperCase(), playerId: socket.id, isHost: false });
     broadcastLobby(room);
   });
 
@@ -236,27 +290,25 @@ io.on('connection', (socket) => {
 
   socket.on('disconnect', () => {
     if (!currentRoom) return;
-    const idx = currentRoom.players.findIndex(p => p.id === socket.id);
-    if (idx === -1) return;
+    const player = currentRoom.players.find(p => p.id === socket.id);
+    if (!player) return;
 
-    currentRoom.players.splice(idx, 1);
+    player.connected = false;
 
-    if (currentRoom.players.length === 0) {
-      rooms.delete(currentRoom.code);
+    // If ALL players are disconnected, keep the room (it'll expire after 12h)
+    const connectedPlayers = currentRoom.players.filter(p => p.connected);
+
+    if (connectedPlayers.length === 0) {
+      // No one connected, room stays alive for rejoin
       return;
     }
 
-    // If host left, assign new host
+    // If host left, assign new host from connected players
     if (currentRoom.hostId === socket.id) {
-      currentRoom.hostId = currentRoom.players[0].id;
+      currentRoom.hostId = connectedPlayers[0].id;
     }
 
     broadcastLobby(currentRoom);
-
-    // If in phrases phase, check if remaining players are all ready
-    if (currentRoom.phase === 'phrases' && currentRoom.players.every(p => p.ready)) {
-      generateCards(currentRoom);
-    }
   });
 });
 
