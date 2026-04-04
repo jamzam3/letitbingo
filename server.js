@@ -62,15 +62,24 @@ function getRoomState(room) {
     boardSize: room.boardSize,
     phase: room.phase,
     hostId: room.hostId,
-    players: room.players.map(p => ({
-      id: p.id,
-      name: p.name,
-      phrasesSubmitted: p.phrases.length,
-      phrasesNeeded: 0,
-      ready: p.ready,
-      won: p.won,
-      connected: p.connected
-    }))
+    players: room.players.map(p => {
+      const data = {
+        id: p.id,
+        name: p.name,
+        phrasesSubmitted: p.phrases.length,
+        phrasesNeeded: 0,
+        ready: p.ready,
+        won: p.won,
+        connected: p.connected
+      };
+      // Include card/stamp data during game phase so players can view each other's boards
+      if (room.phase === 'game') {
+        data.card = p.card;
+        data.stamped = p.stamped;
+        data.winLine = p.winLine;
+      }
+      return data;
+    })
   };
 }
 

@@ -126,6 +126,27 @@
     .lobby-info { font-size: 0.9rem; color: #a89fd6; text-align: center; }
     .lobby-info strong { color: #ffd200; }
 
+    /* ---- PLAYER TABS (GAME) ---- */
+    .player-tabs { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 8px; }
+    .player-tab {
+      padding: 8px 16px; border: 2px solid rgba(255,255,255,0.15); border-radius: 30px;
+      background: rgba(255,255,255,0.05); color: #a89fd6;
+      font-family: 'Nunito', sans-serif; font-weight: 700; font-size: 0.85rem;
+      cursor: pointer; transition: all 0.2s; position: relative;
+    }
+    .player-tab:hover { border-color: #ffd200; color: #ffd200; }
+    .player-tab.active {
+      background: linear-gradient(135deg, #667eea, #764ba2);
+      border-color: #764ba2; color: #fff;
+    }
+    .player-tab.winner::after { content: '\1F451'; position: absolute; top: -12px; right: -6px; font-size: 1rem; }
+    .player-tab.offline { opacity: 0.5; }
+    .player-tab .status-dot {
+      display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px;
+    }
+    .status-dot.online { background: #2ecc71; }
+    .status-dot.offline { background: #636e72; }
+
     /* ---- PHRASE ENTRY ---- */
     .phrase-input-area { width: 100%; display: flex; gap: 8px; }
     .phrase-input-area input { flex: 1; }
@@ -278,10 +299,13 @@
 
   <!-- SCREEN 4: GAME -->
   <div id="game-screen" class="screen" style="max-width:700px;">
+    <div class="player-tabs" id="game-player-tabs"></div>
+    <p id="viewing-label" style="font-size:0.85rem;color:#7a72a8;display:none;"></p>
     <div class="bingo-header header-colors" id="bingo-header"></div>
     <div class="bingo-grid" id="bingo-grid"></div>
     <div id="win-banner"></div>
     <div class="btn-row" style="margin-top:16px;">
+      <button class="btn-outline" id="back-to-mine-btn" onclick="viewMyCard()" style="display:none;">Back to My Card</button>
       <button class="btn-outline" onclick="leaveGame()">Leave Game</button>
     </div>
   </div>
@@ -308,6 +332,7 @@
     let boardSize = 5;
     let myWon = false;
     let myWinLine = null;
+    let viewingPlayerId = null; // null = viewing own card
 
     // ---- SCREENS ----
     function showScreen(id) {
@@ -368,7 +393,11 @@
           renderPhrasePlayerList(state);
         }
       } else if (state.phase === 'game') {
-        // game-start event handles the transition
+        renderGameTabs(state);
+        // If viewing another player, update their card display
+        if (viewingPlayerId && viewingPlayerId !== myId) {
+          renderViewedPlayer(state);
+        }
       }
     });
 
@@ -378,15 +407,17 @@
       boardSize = bs;
       myWon = false;
       myWinLine = null;
+      viewingPlayerId = null;
       showScreen('game-screen');
       renderGame();
+      if (roomState) renderGameTabs(roomState);
     });
 
     socket.on('stamp-update', ({ stamped, won, winLine }) => {
       myStamped = stamped;
       myWon = won;
       myWinLine = winLine;
-      renderGame();
+      if (!viewingPlayerId || viewingPlayerId === myId) renderGame();
     });
 
     socket.on('player-won', ({ playerId, playerName, winLine }) => {
@@ -516,7 +547,73 @@
     }
 
     // ---- GAME ----
+    function renderGameTabs(state) {
+      const tabs = document.getElementById('game-player-tabs');
+      const activeId = viewingPlayerId || myId;
+      tabs.innerHTML = state.players.map(p => {
+        const classes = ['player-tab'];
+        if (p.id === activeId) classes.push('active');
+        if (p.won) classes.push('winner');
+        if (!p.connected) classes.push('offline');
+        const dot = `<span class="status-dot ${p.connected ? 'online' : 'offline'}"></span>`;
+        const youTag = p.id === myId ? ' (you)' : '';
+        return `<button class="${classes.join(' ')}" onclick="viewPlayer('${p.id}')">${dot}${escapeHtml(p.name)}${youTag}</button>`;
+      }).join('');
+    }
+
+    function viewPlayer(playerId) {
+      if (playerId === myId) {
+        viewMyCard();
+        return;
+      }
+      viewingPlayerId = playerId;
+      if (roomState) {
+        renderGameTabs(roomState);
+        renderViewedPlayer(roomState);
+      }
+    }
+
+    function viewMyCard() {
+      viewingPlayerId = null;
+      document.getElementById('viewing-label').style.display = 'none';
+      document.getElementById('back-to-mine-btn').style.display = 'none';
+      renderGame();
+      if (roomState) renderGameTabs(roomState);
+    }
+
+    function renderViewedPlayer(state) {
+      const player = state.players.find(p => p.id === viewingPlayerId);
+      if (!player || !player.card) return;
+
+      document.getElementById('viewing-label').textContent = `Viewing ${player.name}'s card`;
+      document.getElementById('viewing-label').style.display = 'block';
+      document.getElementById('back-to-mine-btn').style.display = 'inline-block';
+
+      renderBoard(player.card, player.stamped, player.won, player.winLine, false);
+
+      const banner = document.getElementById('win-banner');
+      if (player.won) {
+        banner.textContent = `${player.name} got BINGO!`;
+        banner.style.display = 'block';
+      } else {
+        banner.style.display = 'none';
+      }
+    }
+
     function renderGame() {
+      document.getElementById('viewing-label').style.display = 'none';
+      document.getElementById('back-to-mine-btn').style.display = 'none';
+      renderBoard(myCard, myStamped, myWon, myWinLine, true);
+
+      if (myWon) {
+        document.getElementById('win-banner').textContent = 'YOU GOT BINGO!';
+        document.getElementById('win-banner').style.display = 'block';
+      } else {
+        document.getElementById('win-banner').style.display = 'none';
+      }
+    }
+
+    function renderBoard(card, stamped, won, winLine, interactive) {
       const headerLetters = 'BINGO'.repeat(Math.ceil(boardSize / 5)).slice(0, boardSize);
       const header = document.getElementById('bingo-header');
       header.style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
@@ -526,18 +623,14 @@
       grid.style.gridTemplateColumns = `repeat(${boardSize}, 1fr)`;
       const freeIndex = Math.floor((boardSize * boardSize) / 2);
 
-      grid.innerHTML = myCard.map((phrase, i) => {
+      grid.innerHTML = card.map((phrase, i) => {
         const classes = ['bingo-cell'];
         if (i === freeIndex) classes.push('free');
-        if (myStamped[i]) classes.push('stamped');
-        if (myWon && myWinLine && myWinLine.includes(i)) classes.push('win-cell');
-        return `<div class="${classes.join(' ')}" onclick="stampCell(${i})">${escapeHtml(phrase)}</div>`;
+        if (stamped[i]) classes.push('stamped');
+        if (won && winLine && winLine.includes(i)) classes.push('win-cell');
+        const click = interactive ? `onclick="stampCell(${i})"` : '';
+        return `<div class="${classes.join(' ')}" ${click}>${escapeHtml(phrase)}</div>`;
       }).join('');
-
-      if (myWon) {
-        document.getElementById('win-banner').textContent = 'YOU GOT BINGO!';
-        document.getElementById('win-banner').style.display = 'block';
-      }
     }
 
     function stampCell(index) {
