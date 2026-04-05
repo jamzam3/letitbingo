@@ -256,6 +256,15 @@ io.on('connection', (socket) => {
     socket.emit('admin-data', getAdminData());
   });
 
+  socket.on('admin-delete-room', (code) => {
+    const room = rooms.get(code);
+    if (!room) return;
+    io.to(code).emit('error-msg', 'This game has been ended by an admin.');
+    io.in(code).socketsLeave(code);
+    rooms.delete(code);
+    socket.emit('admin-data', getAdminData());
+  });
+
   socket.on('start-phrases', () => {
     if (!currentRoom || currentRoom.hostId !== socket.id) return;
     if (currentRoom.players.length < 2) {

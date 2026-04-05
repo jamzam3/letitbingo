@@ -502,6 +502,11 @@
       socket.emit('admin-refresh');
     }
 
+    function adminDeleteRoom(code) {
+      if (!confirm(`Delete room ${code}? All players will be kicked.`)) return;
+      socket.emit('admin-delete-room', code);
+    }
+
     function renderAdmin(data) {
       const stats = document.getElementById('admin-stats');
       const activeGames = data.rooms.filter(r => r.phase === 'game').length;
@@ -524,7 +529,10 @@
         <div class="admin-room-card" style="margin-bottom:12px;">
           <div class="admin-room-header">
             <span class="admin-room-code">${room.code}</span>
-            <span class="admin-phase ${room.phase}">${room.phase}</span>
+            <span>
+              <span class="admin-phase ${room.phase}">${room.phase}</span>
+              <button class="admin-view-toggle" style="color:#ff6b6b;border-color:#ff6b6b;margin-left:8px;" onclick="adminDeleteRoom('${room.code}')">Delete</button>
+            </span>
           </div>
           <div class="admin-room-meta">
             <strong>${room.boardSize}x${room.boardSize}</strong> board &mdash;
