@@ -236,6 +236,53 @@
     .phrase-list::-webkit-scrollbar { width: 6px; }
     .phrase-list::-webkit-scrollbar-track { background: transparent; }
     .phrase-list::-webkit-scrollbar-thumb { background: #5a4f9a; border-radius: 3px; }
+
+    /* ---- ADMIN DASHBOARD ---- */
+    .admin-header {
+      font-family: 'Fredoka One', cursive; font-size: 1.6rem; color: #ff6b6b;
+      text-align: center; margin-bottom: 4px;
+    }
+    .admin-stats {
+      display: flex; gap: 16px; justify-content: center; flex-wrap: wrap; margin-bottom: 12px;
+    }
+    .admin-stat {
+      background: rgba(255,255,255,0.06); border-radius: 12px; padding: 12px 20px; text-align: center;
+    }
+    .admin-stat .num { font-family: 'Fredoka One', cursive; font-size: 2rem; color: #ffd200; }
+    .admin-stat .label { font-size: 0.8rem; color: #a89fd6; }
+    .admin-room-card {
+      width: 100%; background: rgba(255,255,255,0.06); border-radius: 14px;
+      padding: 16px 20px; display: flex; flex-direction: column; gap: 10px;
+    }
+    .admin-room-header {
+      display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 8px;
+    }
+    .admin-room-code {
+      font-family: 'Fredoka One', cursive; font-size: 1.4rem; letter-spacing: 4px; color: #ffd200;
+    }
+    .admin-phase {
+      font-size: 0.8rem; font-weight: 700; padding: 3px 10px; border-radius: 8px; text-transform: uppercase;
+    }
+    .admin-phase.lobby { background: #667eea; color: #fff; }
+    .admin-phase.phrases { background: #f7971e; color: #1a1a2e; }
+    .admin-phase.game { background: #2ecc71; color: #1a1a2e; }
+    .admin-room-meta { font-size: 0.85rem; color: #a89fd6; }
+    .admin-room-meta strong { color: #c4bef0; }
+    .admin-player-row {
+      display: flex; align-items: center; gap: 8px; padding: 4px 0;
+      font-size: 0.9rem; border-top: 1px solid rgba(255,255,255,0.05);
+    }
+    .admin-player-row:first-child { border-top: none; }
+    .admin-no-rooms { color: #7a72a8; font-style: italic; text-align: center; padding: 30px; }
+    .admin-room-detail { margin-top: 8px; }
+    .admin-room-detail .bingo-grid { max-width: 350px; margin: 0 auto; }
+    .admin-room-detail .bingo-cell { font-size: 0.6rem; cursor: default; }
+    .admin-view-toggle {
+      background: none; border: 1px solid rgba(255,255,255,0.2); color: #a89fd6;
+      padding: 3px 10px; border-radius: 8px; font-size: 0.8rem; cursor: pointer;
+      font-family: 'Nunito', sans-serif;
+    }
+    .admin-view-toggle:hover { border-color: #ffd200; color: #ffd200; }
   </style>
 </head>
 <body>
@@ -308,6 +355,17 @@
       <button class="btn-outline" id="back-to-mine-btn" onclick="viewMyCard()" style="display:none;">Back to My Card</button>
       <button class="btn-outline" onclick="leaveGame()">Leave Game</button>
     </div>
+  </div>
+
+  <!-- SCREEN 5: ADMIN DASHBOARD -->
+  <div id="admin-screen" class="screen" style="max-width:700px;">
+    <div class="admin-header">Admin Dashboard</div>
+    <div class="admin-stats" id="admin-stats"></div>
+    <div class="btn-row" style="margin-bottom:10px;">
+      <button class="btn-gold" onclick="adminRefresh()">Refresh</button>
+      <button class="btn-outline" onclick="location.reload()">Exit</button>
+    </div>
+    <div id="admin-rooms"></div>
   </div>
 
   <!-- ERROR TOAST -->
@@ -433,6 +491,95 @@
     socket.on('error-msg', (msg) => {
       showToast(msg);
     });
+
+    // ---- ADMIN ----
+    socket.on('admin-data', (data) => {
+      showScreen('admin-screen');
+      renderAdmin(data);
+    });
+
+    function adminRefresh() {
+      socket.emit('admin-refresh');
+    }
+
+    function renderAdmin(data) {
+      const stats = document.getElementById('admin-stats');
+      const activeGames = data.rooms.filter(r => r.phase === 'game').length;
+      const totalPlayers = data.rooms.reduce((sum, r) => sum + r.players.length, 0);
+      const onlinePlayers = data.rooms.reduce((sum, r) => sum + r.players.filter(p => p.connected).length, 0);
+
+      stats.innerHTML = `
+        <div class="admin-stat"><div class="num">${data.totalRooms}</div><div class="label">Total Rooms</div></div>
+        <div class="admin-stat"><div class="num">${activeGames}</div><div class="label">Active Games</div></div>
+        <div class="admin-stat"><div class="num">${onlinePlayers} / ${totalPlayers}</div><div class="label">Players Online</div></div>
+      `;
+
+      const container = document.getElementById('admin-rooms');
+      if (data.rooms.length === 0) {
+        container.innerHTML = '<div class="admin-no-rooms">No active rooms</div>';
+        return;
+      }
+
+      container.innerHTML = data.rooms.map(room => `
+        <div class="admin-room-card" style="margin-bottom:12px;">
+          <div class="admin-room-header">
+            <span class="admin-room-code">${room.code}</span>
+            <span class="admin-phase ${room.phase}">${room.phase}</span>
+          </div>
+          <div class="admin-room-meta">
+            <strong>${room.boardSize}x${room.boardSize}</strong> board &mdash;
+            <strong>${room.players.filter(p => p.connected).length}</strong>/${room.players.length} online &mdash;
+            <strong>${room.hoursLeft}h</strong> remaining
+          </div>
+          <div>
+            ${room.players.map(p => `
+              <div class="admin-player-row">
+                <span class="status-dot ${p.connected ? 'online' : 'offline'}"></span>
+                <span style="flex:1;">${escapeHtml(p.name)}</span>
+                ${p.won ? '<span class="ready-badge">WINNER</span>' : ''}
+                ${room.phase === 'game' ? `<span style="color:#7a72a8;font-size:0.8rem;">${p.stampsCount} stamps</span>` : ''}
+                ${room.phase === 'game' && p.card.length ? `<button class="admin-view-toggle" onclick="toggleAdminCard(this, '${room.code}', '${escapeHtml(p.name)}')">View Card</button>` : ''}
+              </div>
+              <div class="admin-room-detail" data-room="${room.code}" data-player="${escapeHtml(p.name)}" style="display:none;"></div>
+            `).join('')}
+          </div>
+        </div>
+      `).join('');
+
+      // Store admin data for card rendering
+      window._adminData = data;
+    }
+
+    function toggleAdminCard(btn, roomCode, playerName) {
+      const detail = document.querySelector(`.admin-room-detail[data-room="${roomCode}"][data-player="${playerName}"]`);
+      if (!detail) return;
+
+      if (detail.style.display === 'none') {
+        detail.style.display = 'block';
+        btn.textContent = 'Hide';
+        // Render mini card
+        const room = window._adminData.rooms.find(r => r.code === roomCode);
+        const player = room.players.find(p => p.name === playerName);
+        if (!player || !player.card.length) return;
+
+        const size = room.boardSize;
+        const freeIndex = Math.floor((size * size) / 2);
+        detail.innerHTML = `
+          <div class="bingo-grid" style="grid-template-columns:repeat(${size},1fr);max-width:350px;margin:8px auto;">
+            ${player.card.map((phrase, i) => {
+              const classes = ['bingo-cell'];
+              if (i === freeIndex) classes.push('free');
+              if (player.stamped[i]) classes.push('stamped');
+              if (player.won && player.winLine && player.winLine.includes(i)) classes.push('win-cell');
+              return `<div class="${classes.join(' ')}" style="font-size:0.6rem;cursor:default;">${escapeHtml(phrase)}</div>`;
+            }).join('')}
+          </div>
+        `;
+      } else {
+        detail.style.display = 'none';
+        btn.textContent = 'View Card';
+      }
+    }
 
     // ---- LOBBY ----
     function renderLobby(state) {

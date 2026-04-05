@@ -96,12 +96,45 @@ function broadcastLobby(room) {
   io.to(room.code).emit('room-update', state);
 }
 
+// ---- ADMIN ----
+const ADMIN_KEY = '830471';
+
+function getAdminData() {
+  const roomList = [];
+  for (const [code, room] of rooms) {
+    const elapsed = Date.now() - room.createdAt;
+    const hoursLeft = Math.max(0, ((ROOM_TTL - elapsed) / (1000 * 60 * 60))).toFixed(1);
+    roomList.push({
+      code: room.code,
+      phase: room.phase,
+      boardSize: room.boardSize,
+      createdAt: room.createdAt,
+      hoursLeft,
+      players: room.players.map(p => ({
+        name: p.name,
+        connected: p.connected,
+        won: p.won,
+        stampsCount: p.stamped.filter(Boolean).length,
+        card: p.card,
+        stamped: p.stamped,
+        winLine: p.winLine
+      }))
+    });
+  }
+  return { rooms: roomList, totalRooms: rooms.size };
+}
+
 // ---- SOCKET HANDLERS ----
 io.on('connection', (socket) => {
   let currentRoom = null;
   let currentPlayer = null;
 
   socket.on('create-room', ({ playerName, boardSize }) => {
+    // Admin access check
+    if (playerName === ADMIN_KEY) {
+      socket.emit('admin-data', getAdminData());
+      return;
+    }
     const code = generateRoomCode();
     const room = {
       code,
@@ -217,6 +250,10 @@ io.on('connection', (socket) => {
     if (currentRoom.phase !== 'lobby') return;
     currentRoom.boardSize = Math.max(3, Math.min(7, size));
     broadcastLobby(currentRoom);
+  });
+
+  socket.on('admin-refresh', () => {
+    socket.emit('admin-data', getAdminData());
   });
 
   socket.on('start-phrases', () => {
